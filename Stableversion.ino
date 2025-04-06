@@ -1,6 +1,8 @@
+#include <Arduino.h>  // Include Arduino framework for analogRead
 #include <WiFi.h>
 #include <WebServer.h>
-#include <ESP32Servo.h>
+#include <ESP32Servo.h>  // Include ESP32Servo library for Servo functionality
+
 
 // Pin Definitions
 #define MOTOR_IN1 26    // Right Motor Forward
@@ -13,21 +15,23 @@
 #define TRIG_PIN 4      // Ultrasonic Trigger
 #define ECHO_PIN 5      // Ultrasonic Echo
 #define SCAN_SERVO_PIN 15   // Ultrasonic Scan Servo 
-// If you experience servo movement issues, consider using a different pin (e.g., pin 13).
+
+
+#define MOISTURE_SERVO 23 // Moisture Servo Pin (PWM)
+#define MOISTURE_SENSOR 34 // Moisture Sensor Pin (Analog)
+
+#define MQ2_PIN 32  // Connect MQ2 A0 to GPIO34 (ADC-capable)
+
+// Safety Parameters
+#define SAFE_DISTANCE 40   // Safe distance in cm before alert
+#define GAS_THRESHOLD 3000  // Gas level threshold for alert
 
 // Servo Positions
 #define SERVO_LEFT 180     // Left position
 #define SERVO_CENTER 90    // Center position
 #define SERVO_RIGHT 0      // Right position
 
-#define MOISTURE_SERVO 23 // Moisture Servo Pin (PWM)
-#define GAS_PIN 35       // Gas Sensor Pin (Analog)
-#define MOISTURE_SENSOR 34 // Moisture Sensor Pin (Analog)
-
-// Safety Parameters
-#define SAFE_DISTANCE 40   // Safe distance in cm before alert
-#define GAS_THRESHOLD 500  // Gas level threshold for alert
-
+// Function Prototypes
 void stopMotors();
 void handleRoot();
 void handleControl();
@@ -133,7 +137,9 @@ void setup() {
   pinMode(MOISTURE_SERVO, OUTPUT);
   pinMode(MOISTURE_SENSOR, INPUT);
   
-
+  // MQ2 Sensor Pin Setup
+  pinMode(MQ2_PIN, INPUT);  // Set MQ2 pin as input
+  
 
   // Servo Setup: allocate ESP32 PWM timers
   ESP32PWM::allocateTimer(0);
@@ -156,10 +162,6 @@ void setup() {
   WiFi.softAPConfig(local_IP, gateway, subnet);
   WiFi.softAP(ssid, password);
 
-  Serial.println("WiFi Access Point Started");
-  Serial.print("IP Address: ");
-  Serial.println(WiFi.softAPIP());
-
   // Web Server Routes - FIXED to match the JavaScript requests
   server.on("/", handleRoot);
   server.on("/control", handleControl);
@@ -174,15 +176,23 @@ void setup() {
   
   server.begin();
 
-  // Randomize seed for autonomous mode
-  randomSeed(analogRead(0));
+
 }
 
 void loop() {
-  server.handleClient();
+
+
+  gasLevel = analogRead(MQ2_PIN);  // Read analog value (0–4095)
   
-  // Update gas sensor reading continuously
-  // gasLevel = analogRead(GAS_PIN);
+  Serial.print("MQ2 Gas Sensor Value: ");
+  Serial.println(gasLevel);  
+
+  delay(1000);  // Wait for 1 second
+
+
+
+
+  server.handleClient();
   
   // Measure distance
   measureDistance();
@@ -220,8 +230,8 @@ String autoModeStatus = "Idle";
 // Modified autonomousMode function for better navigation
 void autonomousMode() 
 {
-  const int MOVE_SPEED = 80;
-  const int TURN_SPEED = 70;
+  const int MOVE_SPEED = 120;
+  const int TURN_SPEED = 100;
   
   // Center the servo and measure initial distance
   scanServo.write(SERVO_CENTER);
@@ -246,7 +256,7 @@ void autonomousMode()
     delay(300);
     
     moveBackward(MOVE_SPEED);
-    delay(500);
+    delay(1500);
     stopMotors();
     autoModeStatus = "Backing up to safe distance";
     delay(300);
@@ -276,7 +286,7 @@ void autonomousMode()
       // Both sides blocked, back up more
       moveBackward(MOVE_SPEED);
       autoModeStatus = "Both sides blocked - backing up";
-      delay(500);
+      delay(1500);
       stopMotors();
     }
     else if (leftDistance > rightDistance) {
@@ -330,6 +340,7 @@ void setMotorSpeeds(int leftSpeed, int rightSpeed) {
 
 // NEW: Handle the status endpoint
 void handleStatus() {
+
   String jsonResponse = "{\"distance\":" + String(distance) + 
                         ",\"moisture\":" + String(moisture) + 
                         ",\"gas\":" + String(gasLevel) + 
@@ -348,9 +359,6 @@ void handleServo() {
     angle = constrain(angle, 0, 180);
     scanServo.write(angle);
     scanServoAngle = angle;
-    
-    Serial.print("Setting servo angle to: ");
-    Serial.println(angle);
     
     server.send(200, "text/plain", "Servo angle set to " + String(angle));
   } else {
@@ -713,7 +721,7 @@ void handleRoot() {
         </div>
         
         <div id="alertBox" class="alert">PROXIMITY ALERT!</div>
-        <div id="gasAlertBox" class="alert">GAS LEVEL ALERT!</div>
+        <div id="gasAlertBox" class="alert">TOXIC GAS ALERT!</div>
         
         <div class="joystick-container">
             <div id="joystick">
@@ -933,7 +941,8 @@ void handleRoot() {
                 distanceSpan.textContent = data.distance;
                 moistureSpan.textContent = data.moisture;
                 gasSpan.textContent = data.gas;
-                
+                console.log("Raw gas data:", data.gas);
+
                 // Show/hide alerts
                 if (data.objectAlert) {
                     alertBox.classList.add('visible');
