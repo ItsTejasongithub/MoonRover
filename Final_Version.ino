@@ -187,11 +187,6 @@ void loop() {
   Serial.print("MQ2 Gas Sensor Value: ");
   Serial.println(gasLevel);  
 
-  delay(1000);  // Wait for 1 second
-
-
-
-
   server.handleClient();
   
   // Measure distance
