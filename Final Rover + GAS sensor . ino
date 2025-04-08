@@ -3,7 +3,7 @@
  *                                                                                                                     *
  *                                        𝘼𝙡𝙡 𝙧𝙞𝙜𝙝𝙩𝙨 𝙧𝙚𝙨𝙚𝙧𝙫𝙚𝙙 𝙗𝙮 – 10𝙭𝙏𝙚𝙘𝙝𝘾𝙡𝙪𝙗                                          *
  *                                                                                                                     *
- *  Developed by: Tejas Kandi                                                                                          *
+ *  Developed by: 10𝙭𝙏𝙚𝙘𝙝𝘾𝙡𝙪𝙗                                                                                          *
  *                                                                                                                     *
  *  Description:                                                                                                       *
  *  A real-time Moon Rover control and monitoring system using ESP32 with a dark-themed web-based UI.                  *
@@ -67,6 +67,11 @@
 #define SCAN_SERVO_PIN 15   // Ultrasonic Scan Servo
 #define MOISTURE_SERVO 23   // Moisture Sensor Servo (PWM)
 
+// -------------- SERVO POSITIONS --------------
+#define SERVO_LEFT 180      // Left position (degrees)
+#define SERVO_CENTER 90     // Center position (degrees)
+#define SERVO_RIGHT 0       // Right position (degrees)
+
 // Sensor Pins
 #define MOISTURE_SENSOR 34  // Moisture Sensor Pin (Analog)
 #define MQ2_PIN 32          // MQ2 Gas Sensor Pin (Analog)
@@ -75,10 +80,6 @@
 #define SAFE_DISTANCE 40    // Safe distance in cm before obstacle alert
 #define GAS_THRESHOLD 1000  // Gas level threshold for alert
 
-// -------------- SERVO POSITIONS --------------
-#define SERVO_LEFT 180      // Left position (degrees)
-#define SERVO_CENTER 90     // Center position (degrees)
-#define SERVO_RIGHT 0       // Right position (degrees)
 
 // -------------- FUNCTION PROTOTYPES --------------
 void stopMotors();
@@ -370,6 +371,7 @@ void stopMotors() {
   digitalWrite(MOTOR_IN2, LOW);
   digitalWrite(MOTOR_IN3, LOW);
   digitalWrite(MOTOR_IN4, LOW);
+
   analogWrite(MOTOR_ENA, 0);
   analogWrite(MOTOR_ENB, 0);
 }
@@ -451,18 +453,19 @@ void setup() {
  * Arduino main loop function - runs repeatedly
  */
 void loop() {
-  // Update gas sensor readings
-  updateGasConcentrations();
-  applySmoothing();
+
 
   // Get current gas sensor values
   rawSensorValue = getSensorReading();
+
+  // Update RAW gas sensor readings
+  updateGasConcentrations();
+  applySmoothing();
+
+  // Update calculated gas sensor readings
   lpgPercent = mapToPercent(lpgFiltered, LPG_MIN, LPG_MAX);
   alcoholPercent = mapToPercent(alcoholFiltered, ALCOHOL_MIN, ALCOHOL_MAX);
 
-  // Handle web client requests
-  server.handleClient();
-  
   // Update sensor readings
   measureDistance();
   
@@ -478,6 +481,9 @@ void loop() {
   if (!manualMode) {
     autonomousMode();
   }
+
+  // Handle web client requests
+  server.handleClient();
 }
 
 /**
