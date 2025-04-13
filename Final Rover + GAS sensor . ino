@@ -150,7 +150,7 @@ int mapToPercent(float value, float minVal, float maxVal) {
  */
 void warmupSensor() {
   Serial.println("Warming up MQ2...");
-  delay(20000);  // 20 seconds warm-up time
+  // delay(20000);  // 20 seconds warm-up time
 }
 
 /**
@@ -160,18 +160,31 @@ void warmupSensor() {
 void calibrateSensor() {
   Serial.println("Calibrating sensor...");
   float rs_sum = 0;
+  int valid_readings = 0;
   
-  // Take 50 readings to get a stable average
   for (int i = 0; i < 50; i++) {
     int val = getSensorReading();
     float voltage = toVoltage(val);
+    // Skip unreliable readings
+    if (voltage < 0.1) {
+      continue;
+    }
+    
     float rs = calculateRs(voltage);
     rs_sum += rs;
+    valid_readings++;
     delay(100);
   }
   
-  float rs_air = rs_sum / 50.0;
-  Ro = rs_air / RO_CLEAN_AIR_FACTOR;  // Calculate Ro using the clean air factor
+  // Check if we have valid readings
+  if (valid_readings > 0) {
+    float rs_air = rs_sum / valid_readings;
+    Ro = rs_air / RO_CLEAN_AIR_FACTOR;
+  } else {
+    // Default value if all readings were invalid
+    Ro = 10.0; // Use initial value
+  }
+  
   Serial.print("Calibrated Ro = ");
   Serial.println(Ro);
 }
@@ -200,6 +213,8 @@ float toVoltage(int rawVal) {
  * @return Sensor resistance in kΩ
  */
 float calculateRs(float voltage) {
+  // Prevent division by zero
+  if (voltage < 0.1) return 999999.0; // Return a high value instead of infinity
   return ((VOLTAGE_REFERENCE - voltage) / voltage) * RL_VALUE;
 }
 
