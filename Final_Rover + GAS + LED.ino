@@ -755,13 +755,33 @@ void setup() {
  * Arduino main loop function - runs repeatedly
  */
 void loop() {
-
-
-    // // Update alert flags
-    // objectAlert = (distance < SAFE_DISTANCE);
-    // gasAlert = (rawSensorValue > GAS_THRESHOLD);
-
-
+  // 1. FIRST: Collect ALL sensor data
+  // Get all raw sensor readings
+  rawSensorValue = getSensorReading();
+  mappedMoistureValue = analogRead(MOISTURE_SENSOR);
+  measureDistance();  // Get ultrasonic distance measurement
+  
+  // 2. SECOND: Process all sensor data
+  // Process gas sensor data
+  updateGasConcentrations();
+  applySmoothing();
+  
+  // Calculate percentages and mappings
+  lpgPercent = mapToPercent(lpgFiltered, LPG_MIN, LPG_MAX);
+  alcoholPercent = mapToPercent(alcoholFiltered, ALCOHOL_MIN, ALCOHOL_MAX);
+  moisture = map(mappedMoistureValue, 0, 4095, 100, 0);  // Higher value = lower moisture
+  
+  // 3. THIRD: Update alert flags based on processed data
+  objectAlert = (distance < SAFE_DISTANCE);
+  gasAlert = (rawSensorValue > GAS_THRESHOLD);
+  
+  // 4. FOURTH: Handle control logic
+  // Run autonomous mode if selected
+  if (!manualMode) {
+    autonomousMode();
+  }
+  
+  // 5. FIFTH: Update outputs based on current state
   switch(currentState) {
     case FORWARD:
       LEDmoveForward();
@@ -786,50 +806,21 @@ void loop() {
       }
       break;
   }
-
-
-
-  // Get current gas sensor values
-  rawSensorValue = getSensorReading();
-
-  // Update RAW gas sensor readings
-  updateGasConcentrations();
-  applySmoothing();
-
-  // Update calculated gas sensor readings
-  lpgPercent = mapToPercent(lpgFiltered, LPG_MIN, LPG_MAX);
-  alcoholPercent = mapToPercent(alcoholFiltered, ALCOHOL_MIN, ALCOHOL_MAX);
-
-  // Update sensor readings
-  measureDistance();
   
-  // Read moisture sensor and map to percentage
-  mappedMoistureValue = analogRead(MOISTURE_SENSOR);
-  moisture = map(mappedMoistureValue, 0, 4095, 100, 0);  // Higher value = lower moisture
-  
-
-
-
-  
-  // Run autonomous mode if selected
-  if (!manualMode) {
-    autonomousMode();
+  // 6. SIXTH: Handle timing and animations
+  unsigned long currentMillis = millis();
+  if (currentMillis - lastUpdateTime > 100) {  // Update every 100ms
+    // Update animation step
+    if (animationDirection) {
+      animationStep = (animationStep + 1) % NUM_LEDS;
+    } else {
+      animationStep = (animationStep + NUM_LEDS - 1) % NUM_LEDS;
+    }
+    lastUpdateTime = currentMillis;
   }
-
-// Add timing control for animations
-unsigned long currentMillis = millis();
-if (currentMillis - lastUpdateTime > 100) {  // Update every 100ms
-  // Update animation step
-  if (animationDirection) {
-    animationStep = (animationStep + 1) % NUM_LEDS;
-  } else {
-    animationStep = (animationStep + NUM_LEDS - 1) % NUM_LEDS;
-  }
-  lastUpdateTime = currentMillis;
-}
-
-
-  // Handle web client requests
+  
+  // 7. FINALLY: Handle communication
+  // Process any pending web requests
   server.handleClient();
 }
 
@@ -853,6 +844,12 @@ void measureDistance() {
   // Calculate distance (speed of sound = 0.034 cm/μs)
   distance = duration * 0.034 / 2;
   
+    // Handle unreliable distance readings
+      if (distance == 0 || distance > 300) 
+      {
+        distance = 50;  // Use default safe distance if reading is invalid
+      }
+
   // Constrain distance to reasonable range
   distance = constrain(distance, 0, 400);
 }
@@ -871,25 +868,23 @@ void autonomousMode()
   delay(300);
   measureDistance();
 
-  // Handle unreliable distance readings
-  if (distance == 0 || distance > 300) {
-    delay(100);
-    measureDistance();
-    if (distance == 0 || distance > 300) {
-      distance = 50;  // Use default safe distance if reading is invalid
-    }
-  }
+
   
   // Obstacle avoidance logic
   if (distance < SAFE_DISTANCE) 
   {
     // Stop when obstacle detected
     stopMotors();
+    LEDAlert();
+    currentState = STOP;  // Update current state
+    lastUpdateTime = millis();  // Update last update time
     autoModeStatus = "Obstacle detected - stopping";
     delay(300);
     
     // Back up from obstacle
     moveBackward(MOVE_SPEED);
+    LEDmoveBackward();  // Update LED animation for backward movement
+    currentState = BACKWARD;  // Update current state
     delay(1500);
     stopMotors();
     autoModeStatus = "Backing up to safe distance";
@@ -919,6 +914,8 @@ void autonomousMode()
     if (leftDistance < 30 && rightDistance < 30) {
       // Both directions blocked - back up more
       moveBackward(MOVE_SPEED);
+      LEDmoveBackward();  // Update LED animation for backward movement
+      currentState = BACKWARD;  // Update current state
       autoModeStatus = "Both sides blocked - backing up";
       delay(1500);
       stopMotors();
@@ -926,6 +923,8 @@ void autonomousMode()
     else if (leftDistance > rightDistance) {
       // More space on left - turn left
       turnLeft(TURN_SPEED);
+      LEDturnLeft();  // Update LED animation for left turn
+      currentState = LEFT;  // Update current state      
       autoModeStatus = "Turning left: " + String(leftDistance) + "cm";
       // Calculate turn duration based on distance (more distance = longer turn)
       int turnDuration = map(leftDistance, 30, 100, 500, 1000);
@@ -934,16 +933,22 @@ void autonomousMode()
     else {
       // More space on right - turn right
       turnRight(TURN_SPEED);
+      LEDturnRight();  // Update LED animation for right turn
+      currentState = RIGHT;  // Update current state
       autoModeStatus = "Turning right: " + String(rightDistance) + "cm";
       int turnDuration = map(rightDistance, 30, 100, 500, 1000);
       delay(constrain(turnDuration, 500, 1000));
     }
     
     stopMotors();  // Stop after completing turn
+    LEDstopMoving();  // Stop LED animation
+    currentState = STOP;  // Update current state
   }
   else {
     // No obstacle - continue forward
     moveForward(MOVE_SPEED);
+    LEDmoveForward();  // Update LED animation for forward movement
+    currentState = FORWARD;  // Update current state
     autoModeStatus = "Moving forward: " + String(distance) + "cm";
   }
 }
